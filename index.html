@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SmashFest — Web Level Designer</title>
+<style>
+  * { box-sizing: border-box; }
+  html,body { margin:0; height:100%; overflow:hidden; font-family: system-ui, Arial, sans-serif; background:#aeb8c4; }
+  #ui {
+    position:absolute; top:0; left:0; width:280px; height:100%; overflow-y:auto;
+    background:#1f2330; color:#e8ecf3; padding:12px; box-shadow:2px 0 8px rgba(0,0,0,.3); z-index:10;
+  }
+  #ui h1 { font-size:16px; margin:0 0 4px; }
+  #ui h2 { font-size:12px; text-transform:uppercase; letter-spacing:.5px; color:#9aa3b2; margin:14px 0 6px; }
+  .row { display:flex; gap:6px; flex-wrap:wrap; }
+  .seg button { flex:1; }
+  button { background:#323a4d; color:#e8ecf3; border:1px solid #444f66; border-radius:6px; padding:7px 8px; cursor:pointer; font-size:12px; }
+  button:hover { background:#3c4661; }
+  button.sel { background:#2f7fd6; border-color:#5aa6ff; font-weight:bold; }
+  .palette button { width:calc(50% - 3px); text-align:left; }
+  .swatch { width:30px; height:30px; border-radius:6px; border:2px solid transparent; cursor:pointer; }
+  .swatch.sel { border-color:#fff; }
+  .hint { font-size:11px; color:#9aa3b2; line-height:1.5; }
+  #count { font-size:12px; color:#7fd6a0; }
+  .big { width:100%; padding:10px; font-weight:bold; margin-top:6px; }
+  #export { background:#2f9e57; border-color:#5fd690; }
+  #status { position:absolute; bottom:8px; left:288px; color:#222; font-size:12px; background:rgba(255,255,255,.6); padding:4px 8px; border-radius:4px; }
+</style>
+</head>
+<body>
+<div id="ui">
+  <h1>🧱 SmashFest Level Designer</h1>
+  <div class="hint">Sol tık: uygula • Sağ tık-sürükle: kamera • Tekerlek: yakınlaş<br>R: döndür • Q/E: derinlik</div>
+
+  <h2>Mod</h2>
+  <div class="row seg" id="modes">
+    <button data-mode="place" class="sel">Yerleştir</button>
+    <button data-mode="paint">Boya</button>
+    <button data-mode="delete">Sil</button>
+  </div>
+
+  <h2>Parça</h2>
+  <div class="row palette" id="pieces"></div>
+
+  <h2>Döndürme: <span id="rotLbl">0°</span></h2>
+  <div class="row seg">
+    <button onclick="setRot(0)">0</button><button onclick="setRot(90)">90</button>
+    <button onclick="setRot(180)">180</button><button onclick="setRot(270)">270</button>
+  </div>
+
+  <h2>Derinlik sırası: <span id="depthLbl">0</span></h2>
+  <div class="row seg">
+    <button onclick="setDepth(-1)">◀ Öne</button><button onclick="setDepth(0,true)">Ön(0)</button><button onclick="setDepth(1)">Arkaya ▶</button>
+  </div>
+
+  <h2>Renk</h2>
+  <div class="row" id="colors"></div>
+
+  <h2>Level</h2>
+  <div id="count">Parça: 0</div>
+  <button id="export" class="big">⬇️ Çıktı Al (level.json)</button>
+  <button class="big" onclick="loadFile()">⬆️ JSON Yükle (düzenle)</button>
+  <button class="big" onclick="clearAll()">🗑️ Hepsini Temizle</button>
+  <input type="file" id="fileIn" accept=".json" style="display:none" />
+  <div class="hint" style="margin-top:8px">Çıktıyı Unity'de <b>Tools ▸ SmashFest ▸ Import Web Level</b> ile içeri al.</div>
+</div>
+<div id="status">Yükleniyor…</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// --- Unity ile AYNI ızgara/koordinatlar ---
+const CELL_X = 0.5, LAYER_Y = 0.717, CELL_Z = 1.0, BASE_Y = 2.5, PLANE_Z = 6.0;
+const STUD_OVERLAP = 0.2;
+
+const PIECES = ["brick-1x1","brick-1x1-round","brick-1x2","brick-1x4","brick-1x6","brick-1x8",
+  "brick-2x2","brick-2x4","brick-2x6","brick-2x8","brick-corner",
+  "brick-slope-2x2","brick-slope-2x3","brick-slope-2x4","plate-1x2","plate-1x4","plate-2x2","plate-2x4"];
+const COLORS = {
+  LegoRed:"#db4533", LegoBlue:"#456bc7", LegoGreen:"#459e61", LegoYellow:"#fac245",
+  LegoOrange:"#e08754", LegoGray:"#bdc9e0", LegoBrown:"#9e6645", LegoWhite:"#ededf2"
+};
+
+let scene, camera, renderer, controls, raycaster, ground, gridGroup, previewBox, tableMesh;
+const loader = new GLTFLoader();
+const protoCache = {}; // type -> {object3d, size}
+let placed = []; // {obj, type, x,y,z, rotY, color}
+
+let mode = "place", selType = "brick-2x2", selColor = "LegoRed", rotY = 0, depth = 0;
+const status = document.getElementById('status');
+
+init();
+
+function init(){
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0xaeb8c4);
+
+  camera = new THREE.PerspectiveCamera(50, (innerWidth-280)/innerHeight, 0.1, 500);
+  camera.position.set(0, 5, -16);
+
+  renderer = new THREE.WebGLRenderer({ antialias:true });
+  renderer.setSize(innerWidth-280, innerHeight);
+  renderer.setPixelRatio(devicePixelRatio);
+  renderer.shadowMap.enabled = true;
+  renderer.domElement.style.position='absolute'; renderer.domElement.style.left='280px';
+  document.body.appendChild(renderer.domElement);
+
+  controls = new OrbitControls(camera, renderer.domElement);
+  controls.target.set(0, 4, PLANE_Z);
+  controls.mouseButtons = { LEFT: null, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE };
+  controls.update();
+
+  // ışık: Unity gibi sağ-arka-üst
+  const amb = new THREE.AmbientLight(0xffffff, 0.85); scene.add(amb);
+  const dir = new THREE.DirectionalLight(0xfff4e0, 1.4);
+  dir.position.set(8, 14, -10); dir.castShadow = true;
+  dir.shadow.mapSize.set(1024,1024); dir.shadow.camera.near=1; dir.shadow.camera.far=80;
+  dir.shadow.camera.left=-30; dir.shadow.camera.right=30; dir.shadow.camera.top=30; dir.shadow.camera.bottom=-30;
+  scene.add(dir);
+
+  // zemin
+  ground = new THREE.Mesh(new THREE.PlaneGeometry(120,120), new THREE.MeshStandardMaterial({color:0x9aa6b4}));
+  ground.rotation.x = -Math.PI/2; ground.position.y = 0; ground.receiveShadow = true; scene.add(ground);
+
+  // masa (parçalara göre büyüyecek)
+  tableMesh = new THREE.Mesh(new THREE.BoxGeometry(1,0.4,1), new THREE.MeshStandardMaterial({color:0xd98a3a}));
+  tableMesh.position.set(0, BASE_Y-0.2, PLANE_Z); tableMesh.scale.set(8,1,2); tableMesh.receiveShadow=true; scene.add(tableMesh);
+
+  // yerleştirme ızgarası (X-Y düzlemi)
+  gridGroup = new THREE.Group(); scene.add(gridGroup);
+  buildGrid();
+
+  // önizleme kutusu
+  previewBox = new THREE.Mesh(new THREE.BoxGeometry(CELL_X, LAYER_Y, CELL_Z),
+    new THREE.MeshBasicMaterial({color:0xffcc00, wireframe:true}));
+  previewBox.visible = false; scene.add(previewBox);
+
+  raycaster = new THREE.Raycaster();
+
+  buildUI();
+  preloadAll();
+
+  renderer.domElement.addEventListener('pointermove', onMove);
+  renderer.domElement.addEventListener('pointerdown', onDown);
+  window.addEventListener('resize', onResize);
+  window.addEventListener('keydown', onKey);
+  document.getElementById('export').onclick = exportJSON;
+  document.getElementById('fileIn').onchange = onFile;
+
+  animate();
+}
+
+function buildGrid(){
+  while(gridGroup.children.length) gridGroup.remove(gridGroup.children[0]);
+  // X-Y yerleştirme düzleminde ince ızgara çizgileri (görsel yardım)
+  const mat = new THREE.LineBasicMaterial({ color:0x5a6678, transparent:true, opacity:0.5 });
+  const pts = [];
+  const z = PLANE_Z;
+  for(let x=-8; x<=8; x+=CELL_X){ pts.push(new THREE.Vector3(x,BASE_Y,z), new THREE.Vector3(x,BASE_Y+8,z)); }
+  for(let y=BASE_Y; y<=BASE_Y+8; y+=LAYER_Y){ pts.push(new THREE.Vector3(-8,y,z), new THREE.Vector3(8,y,z)); }
+  const geo = new THREE.BufferGeometry().setFromPoints(pts);
+  gridGroup.add(new THREE.LineSegments(geo, mat));
+}
+
+function buildUI(){
+  const pc = document.getElementById('pieces');
+  PIECES.forEach(t=>{
+    const b=document.createElement('button'); b.textContent=t.replace('brick-','').replace('plate-','P:');
+    if(t===selType) b.classList.add('sel');
+    b.onclick=()=>{ selType=t; [...pc.children].forEach(x=>x.classList.remove('sel')); b.classList.add('sel'); };
+    pc.appendChild(b);
+  });
+  const cc = document.getElementById('colors');
+  Object.entries(COLORS).forEach(([name,hex])=>{
+    const s=document.createElement('div'); s.className='swatch'+(name===selColor?' sel':''); s.style.background=hex; s.title=name;
+    s.onclick=()=>{ selColor=name; [...cc.children].forEach(x=>x.classList.remove('sel')); s.classList.add('sel'); };
+    cc.appendChild(s);
+  });
+  document.querySelectorAll('#modes button').forEach(b=>{
+    b.onclick=()=>{ mode=b.dataset.mode; document.querySelectorAll('#modes button').forEach(x=>x.classList.remove('sel')); b.classList.add('sel');
+      previewBox.visible = (mode==='place'); };
+  });
+}
+
+function preloadAll(){
+  let done=0;
+  PIECES.forEach(t=>{
+    loader.load('models/'+t+'.glb', g=>{
+      const obj=g.scene; const box=new THREE.Box3().setFromObject(obj); const size=new THREE.Vector3(); box.getSize(size);
+      protoCache[t]={ obj, size, minY: box.min.y };
+      if(++done===PIECES.length) status.textContent='Hazır — parça seç ve ızgaraya tıkla.';
+    }, undefined, err=>{ status.textContent='HATA: models/'+t+'.glb yüklenemedi. (Yerel sunucu gerekli — aşağıdaki nota bak)'; console.error(err); });
+  });
+}
+
+function colorHexToThree(name){ return new THREE.Color(COLORS[name]||'#ffffff'); }
+
+function makePiece(type, color){
+  const proto = protoCache[type]; if(!proto) return null;
+  const obj = proto.obj.clone(true);
+  const col = colorHexToThree(color);
+  obj.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.receiveShadow=true;
+    o.material = new THREE.MeshStandardMaterial({ color: col, roughness:0.55, metalness:0.0 }); } });
+  // stud-gizle: görseli Y'de yukarı uzat (pivot alt; üstteki parça alttakinin studunu örter) — Unity ile aynı
+  const h = proto.size.y || 0.717; const s = (h+STUD_OVERLAP)/h;
+  obj.scale.y = s;
+  const wrap = new THREE.Group(); wrap.add(obj);
+  return wrap;
+}
+
+function snap(p){
+  const x = Math.round(p.x/CELL_X)*CELL_X;
+  const y = BASE_Y + Math.max(0, Math.round((p.y-BASE_Y)/LAYER_Y))*LAYER_Y;
+  return new THREE.Vector3(x, y, PLANE_Z + depth*CELL_Z);
+}
+
+function screenToPlane(ev){
+  const rect = renderer.domElement.getBoundingClientRect();
+  const m = new THREE.Vector2(((ev.clientX-rect.left)/rect.width)*2-1, -((ev.clientY-rect.top)/rect.height)*2+1);
+  raycaster.setFromCamera(m, camera);
+  const planeZ = PLANE_Z + depth*CELL_Z;
+  const plane = new THREE.Plane(new THREE.Vector3(0,0,1), -planeZ);
+  const pt = new THREE.Vector3();
+  return raycaster.ray.intersectPlane(plane, pt) ? pt : null;
+}
+
+function pickPiece(ev){
+  const rect = renderer.domElement.getBoundingClientRect();
+  const m = new THREE.Vector2(((ev.clientX-rect.left)/rect.width)*2-1, -((ev.clientY-rect.top)/rect.height)*2+1);
+  raycaster.setFromCamera(m, camera);
+  for(const p of placed){ if(raycaster.intersectObject(p.obj,true).length) return p; }
+  return null;
+}
+
+function onMove(ev){
+  if(mode!=='place'){ previewBox.visible=false; return; }
+  const pt = screenToPlane(ev); if(!pt){ previewBox.visible=false; return; }
+  const sp = snap(pt); previewBox.position.copy(sp).add(new THREE.Vector3(0,LAYER_Y*0.5,0));
+  previewBox.material.color.set(depth===0?0xffcc00:0xff7a1a); previewBox.visible=true;
+}
+
+function onDown(ev){
+  if(ev.button!==0) return; // sadece sol tık
+  if(mode==='place'){
+    const pt = screenToPlane(ev); if(!pt) return;
+    const sp = snap(pt); place(selType, sp.x, sp.y, sp.z, rotY, selColor);
+  } else if(mode==='delete'){
+    const p = pickPiece(ev); if(p){ scene.remove(p.obj); placed=placed.filter(x=>x!==p); refresh(); }
+  } else if(mode==='paint'){
+    const p = pickPiece(ev); if(p){ const col=colorHexToThree(selColor); p.color=selColor;
+      p.obj.traverse(o=>{ if(o.isMesh) o.material.color.copy(col); }); }
+  }
+}
+
+function place(type,x,y,z,r,color){
+  const obj = makePiece(type,color); if(!obj){ status.textContent='Parça yüklenmedi: '+type; return; }
+  obj.position.set(x,y,z); obj.rotation.y = THREE.MathUtils.degToRad(r);
+  scene.add(obj);
+  placed.push({obj, type, x, y, z, rotY:r, color});
+  refresh();
+}
+
+function refresh(){
+  document.getElementById('count').textContent='Parça: '+placed.length;
+  fitTable();
+}
+
+function fitTable(){
+  if(!placed.length){ tableMesh.scale.set(8,1,2); tableMesh.position.set(0,BASE_Y-0.2,PLANE_Z); return; }
+  const box=new THREE.Box3();
+  placed.forEach(p=>box.expandByObject(p.obj));
+  const size=new THREE.Vector3(), c=new THREE.Vector3(); box.getSize(size); box.getCenter(c);
+  const m=0.6;
+  tableMesh.scale.set(size.x+m*2, 1, size.z+m*2);
+  tableMesh.position.set(c.x, BASE_Y-0.2, c.z);
+}
+
+window.setRot=(r)=>{ rotY=r; document.getElementById('rotLbl').textContent=r+'°'; };
+window.setDepth=(d,abs)=>{ depth = abs? 0 : Math.max(0, depth+d); document.getElementById('depthLbl').textContent=depth; };
+window.clearAll=()=>{ if(!confirm('Tüm parçalar silinsin mi?'))return; placed.forEach(p=>scene.remove(p.obj)); placed=[]; refresh(); };
+window.loadFile=()=>document.getElementById('fileIn').click();
+
+function onKey(e){
+  if(e.key==='r'||e.key==='R'){ setRot((rotY+90)%360); }
+  else if(e.key==='e'||e.key==='E'){ setDepth(1); }
+  else if(e.key==='q'||e.key==='Q'){ setDepth(-1); }
+}
+
+function exportJSON(){
+  const data = { version:1, grid:{cellX:CELL_X,layerY:LAYER_Y,cellZ:CELL_Z,baseY:BASE_Y,planeZ:PLANE_Z},
+    pieces: placed.map(p=>({ type:p.type, x:+p.x.toFixed(3), y:+p.y.toFixed(3), z:+p.z.toFixed(3), rotY:p.rotY, color:p.color })) };
+  const blob = new Blob([JSON.stringify(data,null,2)], {type:'application/json'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='level.json'; a.click();
+  status.textContent='level.json indirildi — Unity\'de Import Web Level ile aç.';
+}
+
+function onFile(ev){
+  const f=ev.target.files[0]; if(!f)return; const rd=new FileReader();
+  rd.onload=()=>{ try{ const d=JSON.parse(rd.result); clearAllSilent();
+    d.pieces.forEach(p=>place(p.type,p.x,p.y,p.z,p.rotY||0,p.color||'LegoRed'));
+    status.textContent='Yüklendi: '+d.pieces.length+' parça.'; }catch(err){ status.textContent='JSON okunamadı.'; } };
+  rd.readAsText(f); ev.target.value='';
+}
+function clearAllSilent(){ placed.forEach(p=>scene.remove(p.obj)); placed=[]; refresh(); }
+
+function onResize(){ camera.aspect=(innerWidth-280)/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth-280,innerHeight); }
+function animate(){ requestAnimationFrame(animate); controls.update(); renderer.render(scene,camera); }
+</script>
+</body>
+</html>
