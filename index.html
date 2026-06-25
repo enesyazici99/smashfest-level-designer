@@ -287,7 +287,14 @@ function pickPiece(ev){
   const rect = renderer.domElement.getBoundingClientRect();
   const m = new THREE.Vector2(((ev.clientX-rect.left)/rect.width)*2-1, -((ev.clientY-rect.top)/rect.height)*2+1);
   raycaster.setFromCamera(m, camera);
-  for(const p of placed){ if(raycaster.intersectObject(p.obj,true).length) return p; }
+  // TÜM kesişimleri MESAFEYE göre sıralı al, en YAKIN (öndeki) parçayı seç.
+  // (Eski hâli dizi sırasına göre ilk kesişeni döndürüyordu -> tıklanan parça yerine
+  //  önündeki/arkasındaki başka parça seçilebiliyordu = "algılamıyor" şikayeti.)
+  const objs = placed.map(p=>p.obj);
+  const hits = raycaster.intersectObjects(objs, true);
+  if(!hits.length) return null;
+  let o = hits[0].object;
+  while(o){ const p = placed.find(pp=>pp.obj===o); if(p) return p; o=o.parent; }
   return null;
 }
 
