@@ -60,8 +60,11 @@
     <button onclick="setRot(180)">180</button><button onclick="setRot(270)">270</button>
   </div>
 
-  <h2>Renk</h2>
+  <h2>Renk (plastik)</h2>
   <div class="row" id="colors"></div>
+
+  <h2>Doku</h2>
+  <div class="row" id="textures"></div>
 
   <h2>Masalar</h2>
   <div id="tables"></div>
@@ -97,11 +100,25 @@ const PIECES = ["brick_1x1","brick_1x2","brick_1x3","brick_1x4","brick_2x2","bri
   "brick_lshape","tall_1x1","tall_1x2","pillar_small","pillar_large",
   "arch_small","arch_medium","arch_large","arch_tall","ramp_small","ramp_medium","ramp_large",
   "dome_small","dome_large","cyl_quarter","cyl_half"];
-// Unity BrikLevelBuilder renk adlarıyla BİREBİR aynı:
-const COLORS = {
-  red:"#ed1f1c", blue:"#1766f2", yellow:"#ffcc0a", green:"#33b824",
-  white:"#f2f2f5", gray:"#9aa0a8", wood:"#9b6a3f", stone:"#8a8a8a", brick:"#b3502e"
+// Unity BrikLevelBuilder renk/doku adlarıyla BİREBİR aynı:
+const COLORS = { red:"#ed1f1c", blue:"#1766f2", yellow:"#ffcc0a", green:"#33b824", white:"#f2f2f5", gray:"#9aa0a8" };
+const TEXTURES = {
+  brick:{tex:"tex_brick.png", tint:"#c2613a"},
+  wood: {tex:"tex_wood.png",  tint:"#a9743f"},
+  stone:{tex:"tex_stone.png", tint:"#9a9a9a"},
+  metal:{metal:true, tint:"#b8bdc6"},
+  ice:  {glass:true, tint:"#bfe4ff"}
 };
+const texLoader = new THREE.TextureLoader();
+const texCache = {};
+function loadTex(file){ if(!texCache[file]){ const t=texLoader.load('textures/'+file); t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(2,2); texCache[file]=t; } return texCache[file]; }
+function materialFor(name){
+  if(COLORS[name]) return new THREE.MeshStandardMaterial({ color:new THREE.Color(COLORS[name]), roughness:0.5, metalness:0.0 });
+  const d=TEXTURES[name]; if(!d) return new THREE.MeshStandardMaterial({color:0xcccccc});
+  if(d.metal) return new THREE.MeshStandardMaterial({ color:new THREE.Color(d.tint), metalness:1.0, roughness:0.3 });
+  if(d.glass) return new THREE.MeshStandardMaterial({ color:new THREE.Color(d.tint), transparent:true, opacity:0.55, roughness:0.1 });
+  return new THREE.MeshStandardMaterial({ color:new THREE.Color(d.tint), map:loadTex(d.tex), roughness:0.65 });
+}
 
 let scene, camera, renderer, controls, raycaster, ground, previewBox, gridHelper;
 const loader = new GLTFLoader();
@@ -183,10 +200,18 @@ function buildUI(){
     pc.appendChild(b);
   });
   const cc = document.getElementById('colors'); cc.innerHTML='';
+  const tc = document.getElementById('textures'); tc.innerHTML='';
+  function clearSel(){ [...cc.children,...tc.children].forEach(x=>x.classList.remove('sel')); }
   Object.entries(COLORS).forEach(([name,hex])=>{
     const s=document.createElement('div'); s.className='swatch'+(name===selColor?' sel':''); s.style.background=hex; s.title=name;
-    s.onclick=()=>{ selColor=name; [...cc.children].forEach(x=>x.classList.remove('sel')); s.classList.add('sel'); };
+    s.onclick=()=>{ selColor=name; clearSel(); s.classList.add('sel'); };
     cc.appendChild(s);
+  });
+  Object.entries(TEXTURES).forEach(([name,d])=>{
+    const s=document.createElement('div'); s.className='swatch'+(name===selColor?' sel':'');
+    s.style.background=d.tint; s.title=name+' (doku)'; s.style.backgroundImage='linear-gradient(135deg, rgba(255,255,255,.35), rgba(0,0,0,.25))';
+    s.onclick=()=>{ selColor=name; clearSel(); s.classList.add('sel'); };
+    tc.appendChild(s);
   });
   document.querySelectorAll('#modes button').forEach(b=>{
     b.onclick=()=>{ mode=b.dataset.mode; document.querySelectorAll('#modes button').forEach(x=>x.classList.remove('sel')); b.classList.add('sel');
@@ -233,15 +258,18 @@ function footprint(type, r){
   if(r===90||r===270){ const t=fx; fx=fz; fz=t; }
   return {fx,fz};
 }
-function snapAxis(v, fc){ const off=(fc%2===0)?CELL/2:0; return Math.round((v-off)/CELL)*CELL+off; }
+// Snap AKTİF MASANIN stud grid'ine göre (parite/konumdan bağımsız tam oturur)
+function snapToTable(v, center, cells, fc){
+  const c = (v - center)/CELL + (cells-1)/2;   // tıklamanın hücre koordinatı (float)
+  const s = Math.round(c - (fc-1)/2);          // tam başlangıç hücresi
+  return center + (s + (fc-1)/2 - (cells-1)/2)*CELL;
+}
 function layerY(){ return layer*CELL; }
 
 function makePiece(type, color){
   const p = proto[type]; if(!p) return null;
   const obj = p.obj.clone(true);
-  const col = new THREE.Color(COLORS[color]||'#ffffff');
-  obj.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.receiveShadow=true;
-    o.material = new THREE.MeshStandardMaterial({ color:col, roughness:0.5, metalness:0.0 }); } });
+  obj.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.receiveShadow=true; o.material = materialFor(color); } });
   const wrap = new THREE.Group(); wrap.add(obj);
   wrap.scale.setScalar(MODEL_SCALE);
   return wrap;
@@ -265,7 +293,8 @@ function pickPiece(ev){
 
 function snapPoint(pt){
   const {fx,fz}=footprint(selType,rotY);
-  return { x:snapAxis(pt.x,fx), y:layerY(), z:snapAxis(pt.z,fz), fx, fz };
+  const t=tables[activeTable] || {x:0,z:0,cellsW:12,cellsD:4};
+  return { x:snapToTable(pt.x, t.x, t.cellsW, fx), y:layerY(), z:snapToTable(pt.z, t.z, t.cellsD, fz), fx, fz };
 }
 
 function onMove(ev){
@@ -289,8 +318,8 @@ function onDown(ev){
   } else if(mode==='delete'){
     const p=pickPiece(ev); if(p){ scene.remove(p.obj); placed=placed.filter(x=>x!==p); refresh(); }
   } else if(mode==='paint'){
-    const p=pickPiece(ev); if(p){ const col=new THREE.Color(COLORS[selColor]); p.color=selColor;
-      p.obj.traverse(o=>{ if(o.isMesh) o.material.color.copy(col); }); }
+    const p=pickPiece(ev); if(p){ p.color=selColor;
+      p.obj.traverse(o=>{ if(o.isMesh) o.material = materialFor(selColor); }); }
   }
 }
 
