@@ -3,41 +3,52 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>SmashFest — Web Level Designer</title>
+<title>SmashFest — Brik Level Designer</title>
 <style>
   * { box-sizing: border-box; }
   html,body { margin:0; height:100%; overflow:hidden; font-family: system-ui, Arial, sans-serif; background:#aeb8c4; }
   #ui {
-    position:absolute; top:0; left:0; width:280px; height:100%; overflow-y:auto;
+    position:absolute; top:0; left:0; width:300px; height:100%; overflow-y:auto;
     background:#1f2330; color:#e8ecf3; padding:12px; box-shadow:2px 0 8px rgba(0,0,0,.3); z-index:10;
   }
   #ui h1 { font-size:16px; margin:0 0 4px; }
   #ui h2 { font-size:12px; text-transform:uppercase; letter-spacing:.5px; color:#9aa3b2; margin:14px 0 6px; }
-  .row { display:flex; gap:6px; flex-wrap:wrap; }
+  .row { display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
   .seg button { flex:1; }
   button { background:#323a4d; color:#e8ecf3; border:1px solid #444f66; border-radius:6px; padding:7px 8px; cursor:pointer; font-size:12px; }
   button:hover { background:#3c4661; }
   button.sel { background:#2f7fd6; border-color:#5aa6ff; font-weight:bold; }
-  .palette button { width:calc(50% - 3px); text-align:left; }
+  .palette button { width:calc(33.33% - 4px); text-align:center; padding:6px 2px; font-size:10px; }
   .swatch { width:30px; height:30px; border-radius:6px; border:2px solid transparent; cursor:pointer; }
   .swatch.sel { border-color:#fff; }
   .hint { font-size:11px; color:#9aa3b2; line-height:1.5; }
   #count { font-size:12px; color:#7fd6a0; }
   .big { width:100%; padding:10px; font-weight:bold; margin-top:6px; }
   #export { background:#2f9e57; border-color:#5fd690; }
-  #status { position:absolute; bottom:8px; left:288px; color:#222; font-size:12px; background:rgba(255,255,255,.6); padding:4px 8px; border-radius:4px; }
+  input[type=number]{ width:48px; background:#11141d; color:#e8ecf3; border:1px solid #444f66; border-radius:4px; padding:4px; }
+  .tbl { background:#262c3b; border:1px solid #3a4356; border-radius:6px; padding:6px; margin-bottom:5px; font-size:11px; }
+  .tbl.act { border-color:#5aa6ff; }
+  #status { position:absolute; bottom:8px; left:308px; color:#222; font-size:12px; background:rgba(255,255,255,.7); padding:4px 8px; border-radius:4px; max-width:60%; }
 </style>
 </head>
 <body>
 <div id="ui">
-  <h1>🧱 SmashFest Level Designer</h1>
-  <div class="hint">Sol tık: uygula • Sağ tık-sürükle: döndür (3B bak) • Tekerlek: yakınlaş<br><b>WASD: gez • Q/E: alçal/yüksel • R: parça döndür</b> • Derinlik için aşağıdaki butonlar</div>
+  <h1>🧱 Brik Level Designer</h1>
+  <div class="hint">Sol tık: uygula • Sağ tık-sürükle: 3B döndür • Tekerlek: yakınlaş<br>
+  <b>WASD: gez • Q/E: in/çık • R: parçayı döndür • [ ]: kat ↓↑</b></div>
 
   <h2>Mod</h2>
   <div class="row seg" id="modes">
     <button data-mode="place" class="sel">Yerleştir</button>
     <button data-mode="paint">Boya</button>
     <button data-mode="delete">Sil</button>
+  </div>
+
+  <h2>Kat (yükseklik): <span id="layerLbl">0 (y=0.0)</span></h2>
+  <div class="row seg">
+    <button onclick="setLayer(-1)">▼ Alt kat</button>
+    <button onclick="setLayer(0,true)">Taban</button>
+    <button onclick="setLayer(1)">Üst kat ▲</button>
   </div>
 
   <h2>Parça</h2>
@@ -49,21 +60,21 @@
     <button onclick="setRot(180)">180</button><button onclick="setRot(270)">270</button>
   </div>
 
-  <h2>Derinlik sırası: <span id="depthLbl">0</span></h2>
-  <div class="row seg">
-    <button onclick="setDepth(-1)">◀ Öne</button><button onclick="setDepth(0,true)">Ön(0)</button><button onclick="setDepth(1)">Arkaya ▶</button>
-  </div>
-
   <h2>Renk</h2>
   <div class="row" id="colors"></div>
 
+  <h2>Masalar</h2>
+  <div id="tables"></div>
+  <div class="row"><button class="big" style="margin-top:2px" onclick="addTable()">➕ Masa Ekle</button></div>
+
   <h2>Level</h2>
-  <div id="count">Parça: 0</div>
+  <div class="row">Atış hakkı: <input type="number" id="shots" value="6" min="1" max="99"></div>
+  <div id="count" style="margin-top:6px">Parça: 0</div>
   <button id="export" class="big">⬇️ Çıktı Al (level.json)</button>
   <button class="big" onclick="loadFile()">⬆️ JSON Yükle (düzenle)</button>
-  <button class="big" onclick="clearAll()">🗑️ Hepsini Temizle</button>
+  <button class="big" onclick="clearPieces()">🗑️ Parçaları Temizle</button>
   <input type="file" id="fileIn" accept=".json" style="display:none" />
-  <div class="hint" style="margin-top:8px">Çıktıyı Unity'de <b>Tools ▸ SmashFest ▸ Import Web Level</b> ile içeri al.</div>
+  <div class="hint" style="margin-top:8px">Çıktıyı Unity'de <b>Tools ▸ SmashFest ▸ Import Brik Level</b> ile içeri al (ya da JSON'u Levels klasörüne koy).</div>
 </div>
 <div id="status">Yükleniyor…</div>
 
@@ -78,77 +89,78 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-// --- Unity ile AYNI ızgara/koordinatlar ---
-const CELL_X = 0.5, LAYER_Y = 0.717, CELL_Z = 1.0, BASE_Y = 2.5, PLANE_Z = 6.0;
-const STUD_OVERLAP = 0.2;
-const MODEL_SCALE = 6.289; // GLB ham boyutu ~0.08/stud → Unity ile aynı (0.5/stud) için ölçek
+// ---- Unity (BrikLevelBuilder) ile AYNI ----
+const CELL = 0.5;           // stud aralığı / hücre
+// Y=0 = masa üst yüzeyi; parçalar +Y'de istiflenir (0.5 katları). Masa aşağı/bacaklar.
 
-const PIECES = ["brick-1x1","brick-1x1-round","brick-1x2","brick-1x4","brick-1x6","brick-1x8",
-  "brick-2x2","brick-2x4","brick-2x6","brick-2x8","brick-corner",
-  "brick-slope-2x2","brick-slope-2x3","brick-slope-2x4","plate-1x2","plate-1x4","plate-2x2","plate-2x4"];
+const PIECES = ["brick_1x1","brick_1x2","brick_1x3","brick_1x4","brick_2x2","brick_2x3","brick_2x4",
+  "brick_lshape","tall_1x1","tall_1x2","pillar_small","pillar_large",
+  "arch_small","arch_medium","arch_large","arch_tall","ramp_small","ramp_medium","ramp_large",
+  "dome_small","dome_large","cyl_quarter","cyl_half"];
+// Unity BrikLevelBuilder renk adlarıyla BİREBİR aynı:
 const COLORS = {
-  LegoRed:"#db4533", LegoBlue:"#456bc7", LegoGreen:"#459e61", LegoYellow:"#fac245",
-  LegoOrange:"#e08754", LegoGray:"#bdc9e0", LegoBrown:"#9e6645", LegoWhite:"#ededf2"
+  red:"#ed1f1c", blue:"#1766f2", yellow:"#ffcc0a", green:"#33b824",
+  white:"#f2f2f5", gray:"#9aa0a8", wood:"#9b6a3f", stone:"#8a8a8a", brick:"#b3502e"
 };
 
-let scene, camera, renderer, controls, raycaster, ground, gridGroup, previewBox, tableMesh;
+let scene, camera, renderer, controls, raycaster, ground, previewBox, gridHelper;
 const loader = new GLTFLoader();
-const protoCache = {}; // type -> {object3d, size}
-let placed = []; // {obj, type, x,y,z, rotY, color}
+const proto = {}; // type -> {obj, sizeUnits:{x,y,z}}
+let MODEL_SCALE = 1;        // brick_1x1 yüksekliği 0.64 olacak şekilde otomatik ayarlanır
 
-let mode = "place", selType = "brick-2x2", selColor = "LegoRed", rotY = 0, depth = 0;
-const keys = {}; // klavye durumu (WASD/QE gezinme) — init/animate'ten ÖNCE tanımlı olmalı
+let placed = [];   // {obj, type, x,y,z, rotY, color}
+let tables = [ {x:0, z:0, cellsW:12, cellsD:4} ];
+let activeTable = 0;
+let tableGroup, legGroup;
+
+let mode = "place", selType = "brick_2x2", selColor = "red", rotY = 0, layer = 0;
+const keys = {};
 const status = document.getElementById('status');
 
 init();
 
 function init(){
   scene = new THREE.Scene();
-  scene.background = new THREE.Color(0xaeb8c4);
+  scene.background = new THREE.Color(0x9fb7d4);
 
-  camera = new THREE.PerspectiveCamera(50, (innerWidth-280)/innerHeight, 0.1, 500);
-  camera.position.set(6, 7, -13); // hafif 3/4 açı (derinlik görünür)
+  camera = new THREE.PerspectiveCamera(50, (innerWidth-300)/innerHeight, 0.1, 500);
+  camera.position.set(6.5, 6.5, -10);
 
   renderer = new THREE.WebGLRenderer({ antialias:true });
-  renderer.setSize(innerWidth-280, innerHeight);
+  renderer.setSize(innerWidth-300, innerHeight);
   renderer.setPixelRatio(devicePixelRatio);
   renderer.shadowMap.enabled = true;
-  renderer.domElement.style.position='absolute'; renderer.domElement.style.left='280px';
+  renderer.domElement.style.position='absolute'; renderer.domElement.style.left='300px';
   document.body.appendChild(renderer.domElement);
 
   controls = new OrbitControls(camera, renderer.domElement);
-  controls.target.set(0, 4, PLANE_Z);
+  controls.target.set(0, 1.5, 0);
   controls.mouseButtons = { LEFT: null, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE };
   controls.update();
 
-  // ışık: Unity gibi sağ-arka-üst
-  const amb = new THREE.AmbientLight(0xffffff, 0.85); scene.add(amb);
-  const dir = new THREE.DirectionalLight(0xfff4e0, 1.4);
+  scene.add(new THREE.AmbientLight(0xffffff, 0.9));
+  const dir = new THREE.DirectionalLight(0xfff4e0, 1.3);
   dir.position.set(8, 14, -10); dir.castShadow = true;
-  dir.shadow.mapSize.set(1024,1024); dir.shadow.camera.near=1; dir.shadow.camera.far=80;
+  dir.shadow.mapSize.set(2048,2048); dir.shadow.camera.near=1; dir.shadow.camera.far=90;
   dir.shadow.camera.left=-30; dir.shadow.camera.right=30; dir.shadow.camera.top=30; dir.shadow.camera.bottom=-30;
   scene.add(dir);
 
-  // zemin
-  ground = new THREE.Mesh(new THREE.PlaneGeometry(120,120), new THREE.MeshStandardMaterial({color:0x9aa6b4}));
-  ground.rotation.x = -Math.PI/2; ground.position.y = 0; ground.receiveShadow = true; scene.add(ground);
+  ground = new THREE.Mesh(new THREE.PlaneGeometry(200,200), new THREE.MeshStandardMaterial({color:0x6fae54}));
+  ground.rotation.x = -Math.PI/2; ground.position.y = -3.0; ground.receiveShadow = true; scene.add(ground);
 
-  // masa (parçalara göre büyüyecek)
-  tableMesh = new THREE.Mesh(new THREE.BoxGeometry(1,0.4,1), new THREE.MeshStandardMaterial({color:0xd98a3a}));
-  tableMesh.position.set(0, BASE_Y-0.2, PLANE_Z); tableMesh.scale.set(8,1,2); tableMesh.receiveShadow=true; scene.add(tableMesh);
+  tableGroup = new THREE.Group(); scene.add(tableGroup);
+  legGroup = new THREE.Group(); scene.add(legGroup);
 
-  // yerleştirme ızgarası (X-Y düzlemi)
-  gridGroup = new THREE.Group(); scene.add(gridGroup);
-  buildGrid();
+  gridHelper = new THREE.Group(); scene.add(gridHelper);
 
-  // önizleme kutusu
-  previewBox = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1),
+  previewBox = new THREE.Mesh(new THREE.BoxGeometry(1,1,1),
     new THREE.MeshBasicMaterial({color:0xffcc00, wireframe:true}));
   previewBox.visible = false; scene.add(previewBox);
 
   raycaster = new THREE.Raycaster();
 
   buildUI();
+  rebuildTables();
   preloadAll();
 
   renderer.domElement.addEventListener('pointermove', onMove);
@@ -162,27 +174,15 @@ function init(){
   animate();
 }
 
-function buildGrid(){
-  while(gridGroup.children.length) gridGroup.remove(gridGroup.children[0]);
-  // X-Y yerleştirme düzleminde ince ızgara çizgileri (görsel yardım)
-  const mat = new THREE.LineBasicMaterial({ color:0x5a6678, transparent:true, opacity:0.5 });
-  const pts = [];
-  const z = PLANE_Z;
-  for(let x=-8; x<=8; x+=CELL_X){ pts.push(new THREE.Vector3(x,BASE_Y,z), new THREE.Vector3(x,BASE_Y+8,z)); }
-  for(let y=BASE_Y; y<=BASE_Y+8; y+=LAYER_Y){ pts.push(new THREE.Vector3(-8,y,z), new THREE.Vector3(8,y,z)); }
-  const geo = new THREE.BufferGeometry().setFromPoints(pts);
-  gridGroup.add(new THREE.LineSegments(geo, mat));
-}
-
 function buildUI(){
-  const pc = document.getElementById('pieces');
+  const pc = document.getElementById('pieces'); pc.innerHTML='';
   PIECES.forEach(t=>{
-    const b=document.createElement('button'); b.textContent=t.replace('brick-','').replace('plate-','P:');
+    const b=document.createElement('button'); b.textContent=t.replace('brick_','').replace('_',' ');
     if(t===selType) b.classList.add('sel');
     b.onclick=()=>{ selType=t; [...pc.children].forEach(x=>x.classList.remove('sel')); b.classList.add('sel'); };
     pc.appendChild(b);
   });
-  const cc = document.getElementById('colors');
+  const cc = document.getElementById('colors'); cc.innerHTML='';
   Object.entries(COLORS).forEach(([name,hex])=>{
     const s=document.createElement('div'); s.className='swatch'+(name===selColor?' sel':''); s.style.background=hex; s.title=name;
     s.onclick=()=>{ selColor=name; [...cc.children].forEach(x=>x.classList.remove('sel')); s.classList.add('sel'); };
@@ -192,50 +192,69 @@ function buildUI(){
     b.onclick=()=>{ mode=b.dataset.mode; document.querySelectorAll('#modes button').forEach(x=>x.classList.remove('sel')); b.classList.add('sel');
       previewBox.visible = (mode==='place'); };
   });
+  buildTablesUI();
+}
+
+function buildTablesUI(){
+  const host = document.getElementById('tables'); host.innerHTML='';
+  tables.forEach((t,i)=>{
+    const d=document.createElement('div'); d.className='tbl'+(i===activeTable?' act':'');
+    d.innerHTML = `<div class="row"><b>Masa ${i+1}</b> ${i===activeTable?'<span style="color:#5aa6ff">●aktif</span>':''}
+      <button style="margin-left:auto" onclick="selTable(${i})">Seç</button>
+      <button onclick="delTable(${i})" ${tables.length<=1?'disabled':''}>✕</button></div>
+      <div class="row" style="margin-top:4px">En:<input type="number" min="2" max="40" value="${t.cellsW}" onchange="setTbl(${i},'cellsW',this.value)">
+        Boy:<input type="number" min="2" max="20" value="${t.cellsD}" onchange="setTbl(${i},'cellsD',this.value)"></div>
+      <div class="row" style="margin-top:4px">X:<input type="number" step="0.5" value="${t.x}" onchange="setTbl(${i},'x',this.value)">
+        Z:<input type="number" step="0.5" value="${t.z}" onchange="setTbl(${i},'z',this.value)"></div>`;
+    host.appendChild(d);
+  });
 }
 
 function preloadAll(){
   let done=0;
   PIECES.forEach(t=>{
     loader.load('models/'+t+'.glb', g=>{
-      const obj=g.scene; const box=new THREE.Box3().setFromObject(obj); const size=new THREE.Vector3(); box.getSize(size);
-      protoCache[t]={ obj, size: size.multiplyScalar(MODEL_SCALE) }; // ölçeklenmiş (Unity) boyut
-      if(++done===PIECES.length) status.textContent='Hazır — parça seç ve ızgaraya tıkla.';
-    }, undefined, err=>{ status.textContent='HATA: models/'+t+'.glb yüklenemedi. (Yerel sunucu gerekli — aşağıdaki nota bak)'; console.error(err); });
+      const obj=g.scene; const box=new THREE.Box3().setFromObject(obj); const s=new THREE.Vector3(); box.getSize(s);
+      proto[t]={ obj, sizeUnits:{x:s.x,y:s.y,z:s.z} };
+      if(++done===PIECES.length){
+        // brick_1x1 yüksekliği 0.64 olacak şekilde global ölçek
+        const h = proto['brick_1x1'] ? proto['brick_1x1'].sizeUnits.y : 0.64;
+        MODEL_SCALE = 0.64 / (h || 0.64);
+        for(const k in proto){ const u=proto[k].sizeUnits; proto[k].sizeUnits={x:u.x*MODEL_SCALE,y:u.y*MODEL_SCALE,z:u.z*MODEL_SCALE}; }
+        status.textContent='Hazır — parça seç, masaya tıkla. (ölçek×'+MODEL_SCALE.toFixed(2)+')';
+      }
+    }, undefined, err=>{ status.textContent='HATA: models/'+t+'.glb yüklenemedi (yerel sunucu gerekli).'; console.error(err); });
   });
 }
 
-function colorHexToThree(name){ return new THREE.Color(COLORS[name]||'#ffffff'); }
+function footprint(type, r){
+  const u = proto[type] ? proto[type].sizeUnits : {x:CELL,z:CELL};
+  let fx=Math.max(1,Math.round(u.x/CELL)), fz=Math.max(1,Math.round(u.z/CELL));
+  if(r===90||r===270){ const t=fx; fx=fz; fz=t; }
+  return {fx,fz};
+}
+function snapAxis(v, fc){ const off=(fc%2===0)?CELL/2:0; return Math.round((v-off)/CELL)*CELL+off; }
+function layerY(){ return layer*CELL; }
 
 function makePiece(type, color){
-  const proto = protoCache[type]; if(!proto) return null;
-  const obj = proto.obj.clone(true); // ham GLB (scale 1)
-  const col = colorHexToThree(color);
+  const p = proto[type]; if(!p) return null;
+  const obj = p.obj.clone(true);
+  const col = new THREE.Color(COLORS[color]||'#ffffff');
   obj.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.receiveShadow=true;
-    o.material = new THREE.MeshStandardMaterial({ color: col, roughness:0.55, metalness:0.0 }); } });
+    o.material = new THREE.MeshStandardMaterial({ color:col, roughness:0.5, metalness:0.0 }); } });
   const wrap = new THREE.Group(); wrap.add(obj);
-  // MODEL_SCALE (Unity boyutu) + stud-gizle (Y'de yukarı uzat)
-  const sH = proto.size.y || 0.717; const s = (sH+STUD_OVERLAP)/sH;
-  wrap.scale.set(MODEL_SCALE, MODEL_SCALE*s, MODEL_SCALE);
+  wrap.scale.setScalar(MODEL_SCALE);
   return wrap;
 }
 
-function snap(p){
-  const x = Math.round(p.x/CELL_X)*CELL_X;
-  const y = BASE_Y + Math.max(0, Math.round((p.y-BASE_Y)/LAYER_Y))*LAYER_Y;
-  return new THREE.Vector3(x, y, PLANE_Z + depth*CELL_Z);
-}
-
-function screenToPlane(ev){
+function screenToLayer(ev){
   const rect = renderer.domElement.getBoundingClientRect();
   const m = new THREE.Vector2(((ev.clientX-rect.left)/rect.width)*2-1, -((ev.clientY-rect.top)/rect.height)*2+1);
   raycaster.setFromCamera(m, camera);
-  const planeZ = PLANE_Z + depth*CELL_Z;
-  const plane = new THREE.Plane(new THREE.Vector3(0,0,1), -planeZ);
+  const plane = new THREE.Plane(new THREE.Vector3(0,1,0), -layerY());
   const pt = new THREE.Vector3();
   return raycaster.ray.intersectPlane(plane, pt) ? pt : null;
 }
-
 function pickPiece(ev){
   const rect = renderer.domElement.getBoundingClientRect();
   const m = new THREE.Vector2(((ev.clientX-rect.left)/rect.width)*2-1, -((ev.clientY-rect.top)/rect.height)*2+1);
@@ -244,67 +263,105 @@ function pickPiece(ev){
   return null;
 }
 
+function snapPoint(pt){
+  const {fx,fz}=footprint(selType,rotY);
+  return { x:snapAxis(pt.x,fx), y:layerY(), z:snapAxis(pt.z,fz), fx, fz };
+}
+
 function onMove(ev){
   if(mode!=='place'){ previewBox.visible=false; return; }
-  const pt = screenToPlane(ev); if(!pt){ previewBox.visible=false; return; }
-  const proto = protoCache[selType]; if(!proto){ previewBox.visible=false; return; }
-  const sp = snap(pt);
-  previewBox.scale.copy(proto.size);                                  // önizleme = parçanın gerçek boyutu
-  previewBox.position.copy(sp).add(new THREE.Vector3(0, proto.size.y*0.5, 0));
-  previewBox.material.color.set(depth===0?0xffcc00:0xff7a1a); previewBox.visible=true;
+  const pt = screenToLayer(ev); const p=proto[selType];
+  if(!pt||!p){ previewBox.visible=false; return; }
+  const s=snapPoint(pt);
+  const u=p.sizeUnits;
+  const w = (rotY===90||rotY===270)? u.z : u.x;
+  const d = (rotY===90||rotY===270)? u.x : u.z;
+  previewBox.scale.set(w, u.y, d);
+  previewBox.position.set(s.x, s.y + u.y*0.5, s.z);
+  previewBox.visible=true;
 }
 
 function onDown(ev){
-  if(ev.button!==0) return; // sadece sol tık
+  if(ev.button!==0) return;
   if(mode==='place'){
-    const pt = screenToPlane(ev); if(!pt) return;
-    const sp = snap(pt); place(selType, sp.x, sp.y, sp.z, rotY, selColor);
+    const pt=screenToLayer(ev); if(!pt) return; const s=snapPoint(pt);
+    place(selType, s.x, s.y, s.z, rotY, selColor);
   } else if(mode==='delete'){
-    const p = pickPiece(ev); if(p){ scene.remove(p.obj); placed=placed.filter(x=>x!==p); refresh(); }
+    const p=pickPiece(ev); if(p){ scene.remove(p.obj); placed=placed.filter(x=>x!==p); refresh(); }
   } else if(mode==='paint'){
-    const p = pickPiece(ev); if(p){ const col=colorHexToThree(selColor); p.color=selColor;
+    const p=pickPiece(ev); if(p){ const col=new THREE.Color(COLORS[selColor]); p.color=selColor;
       p.obj.traverse(o=>{ if(o.isMesh) o.material.color.copy(col); }); }
   }
 }
 
 function place(type,x,y,z,r,color){
-  const obj = makePiece(type,color); if(!obj){ status.textContent='Parça yüklenmedi: '+type; return; }
-  obj.position.set(x,y,z); obj.rotation.y = THREE.MathUtils.degToRad(r);
+  const obj=makePiece(type,color); if(!obj){ status.textContent='Parça yüklenmedi: '+type; return; }
+  obj.position.set(x,y,z); obj.rotation.y=THREE.MathUtils.degToRad(r);
   scene.add(obj);
-  placed.push({obj, type, x, y, z, rotY:r, color});
+  placed.push({obj,type,x:+x.toFixed(3),y:+y.toFixed(3),z:+z.toFixed(3),rotY:r,color});
   refresh();
 }
+function refresh(){ document.getElementById('count').textContent='Parça: '+placed.length; }
 
-function refresh(){
-  document.getElementById('count').textContent='Parça: '+placed.length;
-  fitTable();
+// ---- Masalar görsel ----
+function rebuildTables(){
+  while(tableGroup.children.length) tableGroup.remove(tableGroup.children[0]);
+  while(legGroup.children.length) legGroup.remove(legGroup.children[0]);
+  while(gridHelper.children.length) gridHelper.remove(gridHelper.children[0]);
+  const plateMat=new THREE.MeshStandardMaterial({color:0x1d6fe0, roughness:0.5});
+  const rimMat=new THREE.MeshStandardMaterial({color:0xf2f2f5, roughness:0.5});
+  const legMat=new THREE.MeshStandardMaterial({color:0x1d6fe0, roughness:0.5});
+  tables.forEach((t,i)=>{
+    const W=t.cellsW*CELL, D=t.cellsD*CELL;
+    const plate=new THREE.Mesh(new THREE.BoxGeometry(W,0.4,D), plateMat);
+    plate.position.set(t.x,-0.2,t.z); plate.receiveShadow=true; tableGroup.add(plate);
+    const rim=new THREE.Mesh(new THREE.BoxGeometry(W+0.05,0.14,D+0.05), rimMat);
+    rim.position.set(t.x,-0.07,t.z); tableGroup.add(rim);
+    // studlar (görsel, seyrek)
+    const studGeo=new THREE.CylinderGeometry(0.12,0.12,0.14,12);
+    for(let ix=0;ix<t.cellsW;ix++) for(let iy=0;iy<t.cellsD;iy++){
+      const sx=t.x+(ix-(t.cellsW-1)/2)*CELL, sz=t.z+(iy-(t.cellsD-1)/2)*CELL;
+      const st=new THREE.Mesh(studGeo, rimMat); st.position.set(sx,0.07,sz); tableGroup.add(st);
+    }
+    // bacaklar
+    const legLen=2.6, legX=Math.max(0.6,W/2-1.0);
+    [-legX,legX].forEach(lx=>{
+      const leg=new THREE.Mesh(new THREE.CylinderGeometry(0.42,0.42,legLen,18), legMat);
+      leg.position.set(t.x+lx, -0.4-legLen/2, t.z); leg.castShadow=true; legGroup.add(leg);
+    });
+    // aktif masa gridi (üst yüzeyde, kat yüksekliğinde)
+    if(i===activeTable){
+      const mat=new THREE.LineBasicMaterial({color:0xffffff, transparent:true, opacity:0.35});
+      const pts=[]; const y=layerY();
+      for(let gx=-t.cellsW/2; gx<=t.cellsW/2; gx++){ pts.push(new THREE.Vector3(t.x+gx*CELL,y,t.z-D/2), new THREE.Vector3(t.x+gx*CELL,y,t.z+D/2)); }
+      for(let gz=-t.cellsD/2; gz<=t.cellsD/2; gz++){ pts.push(new THREE.Vector3(t.x-W/2,y,t.z+gz*CELL), new THREE.Vector3(t.x+W/2,y,t.z+gz*CELL)); }
+      gridHelper.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(pts), mat));
+    }
+  });
 }
 
-function fitTable(){
-  if(!placed.length){ tableMesh.scale.set(8,1,2); tableMesh.position.set(0,BASE_Y-0.2,PLANE_Z); return; }
-  const box=new THREE.Box3();
-  placed.forEach(p=>box.expandByObject(p.obj));
-  const size=new THREE.Vector3(), c=new THREE.Vector3(); box.getSize(size); box.getCenter(c);
-  const m=0.6;
-  tableMesh.scale.set(size.x+m*2, 1, size.z+m*2);
-  tableMesh.position.set(c.x, BASE_Y-0.2, c.z);
-}
-
+// ---- UI fonksiyonları (global) ----
 window.setRot=(r)=>{ rotY=r; document.getElementById('rotLbl').textContent=r+'°'; };
-window.setDepth=(d,abs)=>{ depth = abs? 0 : Math.max(0, depth+d); document.getElementById('depthLbl').textContent=depth; };
-window.clearAll=()=>{ if(!confirm('Tüm parçalar silinsin mi?'))return; placed.forEach(p=>scene.remove(p.obj)); placed=[]; refresh(); };
+window.setLayer=(d,abs)=>{ layer= abs? 0 : Math.max(0, layer+d);
+  document.getElementById('layerLbl').textContent=layer+' (y='+layerY().toFixed(1)+')'; rebuildTables(); };
+window.selTable=(i)=>{ activeTable=i; buildTablesUI(); rebuildTables(); };
+window.delTable=(i)=>{ if(tables.length<=1)return; tables.splice(i,1); if(activeTable>=tables.length)activeTable=tables.length-1; buildTablesUI(); rebuildTables(); };
+window.addTable=()=>{ const last=tables[tables.length-1]; tables.push({x:+(last.x+ (last.cellsW*CELL)+1).toFixed(2), z:last.z, cellsW:8, cellsD:4}); activeTable=tables.length-1; buildTablesUI(); rebuildTables(); };
+window.setTbl=(i,k,v)=>{ v=parseFloat(v)||0; if(k==='cellsW'||k==='cellsD') v=Math.max(2,Math.round(v)); tables[i][k]=v; rebuildTables(); buildTablesUI(); };
+window.clearPieces=()=>{ if(!confirm('Tüm parçalar silinsin mi? (masalar kalır)'))return; placed.forEach(p=>scene.remove(p.obj)); placed=[]; refresh(); };
 window.loadFile=()=>document.getElementById('fileIn').click();
 
 function onKeyDown(e){
   const k=e.key.toLowerCase(); keys[k]=true;
   if(k==='r') setRot((rotY+90)%360);
+  if(e.key===']') setLayer(1);
+  if(e.key==='[') setLayer(-1);
 }
 function fly(){
-  let any=false; const sp=0.4;
-  const fwd=new THREE.Vector3(); camera.getWorldDirection(fwd); fwd.y=0;
+  const sp=0.4; const fwd=new THREE.Vector3(); camera.getWorldDirection(fwd); fwd.y=0;
   if(fwd.lengthSq()<1e-5) fwd.set(0,0,1); fwd.normalize();
-  const right=new THREE.Vector3().crossVectors(fwd, new THREE.Vector3(0,1,0)).normalize();
-  const mv=new THREE.Vector3();
+  const right=new THREE.Vector3().crossVectors(fwd,new THREE.Vector3(0,1,0)).normalize();
+  const mv=new THREE.Vector3(); let any=false;
   if(keys['w']){mv.add(fwd);any=true;} if(keys['s']){mv.sub(fwd);any=true;}
   if(keys['d']){mv.add(right);any=true;} if(keys['a']){mv.sub(right);any=true;}
   if(keys['e']){mv.y+=1;any=true;} if(keys['q']){mv.y-=1;any=true;}
@@ -312,28 +369,35 @@ function fly(){
 }
 
 function exportJSON(){
-  const data = { version:1, grid:{cellX:CELL_X,layerY:LAYER_Y,cellZ:CELL_Z,baseY:BASE_Y,planeZ:PLANE_Z},
-    pieces: placed.map(p=>({ type:p.type, x:+p.x.toFixed(3), y:+p.y.toFixed(3), z:+p.z.toFixed(3), rotY:p.rotY, color:p.color })) };
-  const blob = new Blob([JSON.stringify(data,null,2)], {type:'application/json'});
+  const data = {
+    shotCount: parseInt(document.getElementById('shots').value)||6,
+    tables: tables.map(t=>({x:+t.x, z:+t.z, cellsW:t.cellsW, cellsD:t.cellsD})),
+    pieces: placed.map(p=>({ type:p.type, x:+p.x, y:+p.y, z:+p.z, rotY:p.rotY, color:p.color }))
+  };
+  const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='level.json'; a.click();
-  status.textContent='level.json indirildi — Unity\'de Import Web Level ile aç.';
+  status.textContent='level.json indirildi ('+placed.length+' parça, '+tables.length+' masa).';
 }
 
 function onFile(ev){
   const f=ev.target.files[0]; if(!f)return; const rd=new FileReader();
-  rd.onload=()=>{ try{ const d=JSON.parse(rd.result); clearAllSilent();
-    d.pieces.forEach(p=>place(p.type,p.x,p.y,p.z,p.rotY||0,p.color||'LegoRed'));
-    status.textContent='Yüklendi: '+d.pieces.length+' parça.'; }catch(err){ status.textContent='JSON okunamadı.'; } };
+  rd.onload=()=>{ try{
+    const d=JSON.parse(rd.result);
+    placed.forEach(p=>scene.remove(p.obj)); placed=[];
+    if(d.tables&&d.tables.length){ tables=d.tables.map(t=>({x:+t.x||0,z:+t.z||0,cellsW:t.cellsW||12,cellsD:t.cellsD||4})); activeTable=0; }
+    if(d.shotCount) document.getElementById('shots').value=d.shotCount;
+    (d.pieces||[]).forEach(p=>place(p.type,p.x,p.y,p.z,p.rotY||0,p.color||'red'));
+    buildTablesUI(); rebuildTables();
+    status.textContent='Yüklendi: '+placed.length+' parça, '+tables.length+' masa.';
+  }catch(err){ status.textContent='JSON okunamadı: '+err.message; } };
   rd.readAsText(f); ev.target.value='';
 }
-function clearAllSilent(){ placed.forEach(p=>scene.remove(p.obj)); placed=[]; refresh(); }
 
-function onResize(){ camera.aspect=(innerWidth-280)/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth-280,innerHeight); }
+function onResize(){ camera.aspect=(innerWidth-300)/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth-300,innerHeight); }
 function animate(){ requestAnimationFrame(animate); fly(); controls.update(); renderer.render(scene,camera); }
 
-// test/otomasyon için
-window.place = place; window.__count = ()=>placed.length;
-window.__view = (px,py,pz,tx,ty,tz)=>{ camera.position.set(px,py,pz); controls.target.set(tx,ty,tz); controls.update(); };
+// otomasyon
+window.__count=()=>placed.length; window.place=place;
 </script>
 </body>
 </html>
