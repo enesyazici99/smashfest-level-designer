@@ -18,7 +18,10 @@
   button { background:#323a4d; color:#e8ecf3; border:1px solid #444f66; border-radius:6px; padding:7px 8px; cursor:pointer; font-size:12px; }
   button:hover { background:#3c4661; }
   button.sel { background:#2f7fd6; border-color:#5aa6ff; font-weight:bold; }
+  .palette { max-height:340px; overflow-y:auto; padding-right:4px; }
   .palette button { width:calc(33.33% - 4px); text-align:center; padding:6px 2px; font-size:10px; }
+  .palhead { width:100%; font-size:10px; font-weight:bold; text-transform:uppercase; letter-spacing:.4px; color:#9aa3b2; margin:8px 0 3px; border-bottom:1px solid #3a4356; padding-bottom:2px; }
+  #pieceSearch { width:100%; box-sizing:border-box; margin-bottom:6px; background:#11141d; color:#e8ecf3; border:1px solid #444f66; border-radius:4px; padding:6px; font-size:12px; }
   .swatch { width:30px; height:30px; border-radius:6px; border:2px solid transparent; cursor:pointer; }
   .swatch.sel { border-color:#fff; }
   .hint { font-size:11px; color:#9aa3b2; line-height:1.5; }
@@ -51,7 +54,8 @@
     <button onclick="setLayer(1)">Üst kat ▲</button>
   </div>
 
-  <h2>Parça</h2>
+  <h2>Parça (<span id="pieceCount">0</span>)</h2>
+  <input id="pieceSearch" type="text" placeholder="🔍 parça ara… (ör. arch, door, 2x4)">
   <div class="row palette" id="pieces"></div>
 
   <h2>Döndürme: <span id="rotLbl">0°</span></h2>
@@ -96,10 +100,26 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 const CELL = 0.5;           // stud aralığı / hücre
 // Y=0 = masa üst yüzeyi; parçalar +Y'de istiflenir (0.5 katları). Masa aşağı/bacaklar.
 
-const PIECES = ["brick_1x1","brick_1x2","brick_1x3","brick_1x4","brick_2x2","brick_2x3","brick_2x4",
-  "brick_lshape","tall_1x1","tall_1x2","pillar_small","pillar_large",
-  "arch_small","arch_medium","arch_large","arch_tall","ramp_small","ramp_medium","ramp_large",
-  "dome_small","dome_large","cyl_quarter","cyl_half"];
+// Tüm Brik seti — kategorili (Ultimate Modular Toy Brick, 3 sheet). Unity FBX adlarıyla birebir.
+const PIECE_GROUPS = [
+  {label:"Tuğla (Brick)", items:["brick_1x1","brick_1x2","brick_1x3","brick_1x4","brick_1x6","brick_1x8","brick_1x10","brick_1x12","brick_1x14","brick_1x16","brick_2x2","brick_2x3","brick_2x4","brick_2x6","brick_2x8","brick_2x10","brick_2x12","brick_2x14","brick_2x16","brick_3x3","brick_3x4","brick_3x6","brick_3x8","brick_3x12","brick_4x4","brick_4x6","brick_4x8","brick_4x12","brick_6x6","brick_8x8","brick_8x10","brick_10x10","brick_12x12","brick_16x16","brick_lshape"]},
+  {label:"Plaka (Plate, h0.25)", items:["plate_1x1","plate_1x2","plate_1x3","plate_1x4","plate_1x6","plate_1x8","plate_1x10","plate_1x12","plate_1x16","plate_2x2","plate_2x3","plate_2x4","plate_2x6","plate_2x8","plate_2x10","plate_2x12","plate_2x16","plate_4x4","plate_4x6","plate_4x8","plate_10x10","plate_12x12","plate_16x16"]},
+  {label:"Karo (Tile, düz, h0.125)", items:["tile_1x1","tile_1x2","tile_1x3","tile_1x4","tile_1x6","tile_1x8","tile_1x10","tile_1x12","tile_1x16","tile_2x2","tile_2x3","tile_2x4","tile_2x6","tile_2x8","tile_2x10","tile_2x12","tile_2x16","tile_4x4","tile_4x6","tile_4x8","tile_10x10","tile_12x12","tile_16x16"]},
+  {label:"Duvar / Panel", items:["wall_1x2","wall_1x4","wall_2x2","wall_2x4","wall_2x6","wall_2x8","wall_corner","panel_facade"]},
+  {label:"Sütun / Kolon", items:["tall_1x1","tall_1x2","pillar_small","pillar_large","pillar_1x1_h1","pillar_1x1_h5","pillar_1x1_h6","pillar_1x1_h8","pillar_1x1_h10","pillar_1x1_h12","pillar_1x1_h16","pillar_1x1_h20","round_2x2_h1","round_2x2_h3","round_2x2_h4","round_2x2_h6","round_2x2_h8","round_2x2_h12","round_2x2_h16","round_2x2_h20"]},
+  {label:"Technic (delikli)", items:["technic_1x4","technic_1x6","technic_1x8","technic_1x10","technic_1x12","technic_1x16"]},
+  {label:"Bağlantı (Connector)", items:["corner_l","corner_t","corner_x","corner_y","corner_cross","corner_cap","cross_axle","pin","axle","ball_joint","hinge","clip","rotator","slider"]},
+  {label:"Kemer (Arch)", items:["arch_small","arch_medium","arch_large","arch_tall","arch_wide","arch_round","arch_corner","arch_gothic","arch_pointed","arch_keyhole","arch_decorative","arch_triple"]},
+  {label:"Eğim / Rampa", items:["slope_15","slope_30","slope_45","slope_60","ramp_small","ramp_medium","ramp_large","ramp_short","ramp_long4","ramp_curved"]},
+  {label:"Merdiven (Stair)", items:["stair_2","stair_4","stair_6","stair_8","stair_corner","stair_wide","stair_spiral"]},
+  {label:"Yuvarlak / Kubbe", items:["dome_small","dome_large","cyl_quarter","cyl_half"]},
+  {label:"Çatı (Roof)", items:["roof_flat","roof_slope15","roof_slope30","roof_slope45","roof_slope60","roof_gable","roof_curved","roof_dome","roof_round_dome","roof_conical","roof_corner","roof_skylight"]},
+  {label:"Pencere / Cam", items:["window_small","window_large","window_double","window_corner","window_bay","window_arched","glass_1x1","glass_1x2","glass_1x4"]},
+  {label:"Kapı / Kapan", items:["door_small","door","door_large","door_double","door_arch","gate","door_garage","door_bank","door_shop","door_automatic","gate_jail","gate_garden","gate_fence"]},
+  {label:"Zemin (Floor)", items:["floor_round","floor_octagon","floor_hexagon","floor_grate","floor_manhole","floor_trapdoor","floor_hatch","floor_dock"]},
+  {label:"Dekoratif", items:["deco_flag","deco_banner","deco_shield","deco_torch","deco_lamp","deco_flower_pot","deco_tree_cone","deco_tree_round","deco_tree","deco_bush","deco_cactus","deco_rock","deco_crystal","deco_gem","deco_chest","deco_barrel","deco_crate","deco_bench","deco_fountain","deco_trash_bin","deco_fence_post","deco_fire_hydrant","deco_statue","deco_grass","deco_skull"]},
+];
+const PIECES = PIECE_GROUPS.reduce((a,g)=>a.concat(g.items), []);
 // Unity BrikLevelBuilder renk/doku adlarıyla BİREBİR aynı:
 const COLORS = { red:"#ed1f1c", blue:"#1766f2", yellow:"#ffcc0a", green:"#33b824", white:"#f2f2f5", gray:"#9aa0a8" };
 const TEXTURES = {
@@ -192,13 +212,9 @@ function init(){
 }
 
 function buildUI(){
-  const pc = document.getElementById('pieces'); pc.innerHTML='';
-  PIECES.forEach(t=>{
-    const b=document.createElement('button'); b.textContent=t.replace('brick_','').replace('_',' ');
-    if(t===selType) b.classList.add('sel');
-    b.onclick=()=>{ selType=t; [...pc.children].forEach(x=>x.classList.remove('sel')); b.classList.add('sel'); };
-    pc.appendChild(b);
-  });
+  const search=document.getElementById('pieceSearch');
+  if(search && !search._wired){ search._wired=true; search.addEventListener('input', ()=>renderPalette(search.value)); }
+  renderPalette(search ? search.value : '');
   const cc = document.getElementById('colors'); cc.innerHTML='';
   const tc = document.getElementById('textures'); tc.innerHTML='';
   function clearSel(){ [...cc.children,...tc.children].forEach(x=>x.classList.remove('sel')); }
@@ -218,6 +234,28 @@ function buildUI(){
       previewBox.visible = (mode==='place'); };
   });
   buildTablesUI();
+}
+
+const PFX_RE = /^(brick_|plate_|tile_|wall_|deco_|roof_|window_|door_|floor_|stair_|arch_|slope_|ramp_|round_2x2_|pillar_1x1_|technic_|gate_|corner_|glass_)/;
+function renderPalette(filter){
+  const pc = document.getElementById('pieces'); pc.innerHTML='';
+  const q = (filter||'').trim().toLowerCase();
+  let shown=0;
+  PIECE_GROUPS.forEach(g=>{
+    const items = q ? g.items.filter(t=>t.toLowerCase().includes(q)) : g.items;
+    if(!items.length) return;
+    const h=document.createElement('div'); h.className='palhead'; h.textContent=g.label; pc.appendChild(h);
+    items.forEach(t=>{
+      const b=document.createElement('button');
+      b.textContent=t.replace(PFX_RE,'').replace(/_/g,' ');
+      b.title=t;
+      if(t===selType) b.classList.add('sel');
+      b.onclick=()=>{ selType=t; [...pc.querySelectorAll('button')].forEach(x=>x.classList.remove('sel')); b.classList.add('sel'); };
+      pc.appendChild(b);
+      shown++;
+    });
+  });
+  const cnt=document.getElementById('pieceCount'); if(cnt) cnt.textContent=shown;
 }
 
 function buildTablesUI(){
