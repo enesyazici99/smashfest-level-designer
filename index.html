@@ -120,6 +120,8 @@ const PIECE_GROUPS = [
   {label:"Dekoratif", items:["deco_flag","deco_banner","deco_shield","deco_torch","deco_lamp","deco_flower_pot","deco_tree_cone","deco_tree_round","deco_tree","deco_bush","deco_cactus","deco_rock","deco_crystal","deco_gem","deco_chest","deco_barrel","deco_crate","deco_bench","deco_fountain","deco_trash_bin","deco_fence_post","deco_fire_hydrant","deco_statue","deco_grass","deco_skull"]},
 ];
 const PIECES = PIECE_GROUPS.reduce((a,g)=>a.concat(g.items), []);
+// Palet etiketinden tip önekini kırpmak için (init()'ten ÖNCE tanımlı olmalı — TDZ!).
+const PFX_RE = /^(brick_|plate_|tile_|wall_|deco_|roof_|window_|door_|floor_|stair_|arch_|slope_|ramp_|round_2x2_|pillar_1x1_|technic_|gate_|corner_|glass_)/;
 // Unity BrikLevelBuilder renk/doku adlarıyla BİREBİR aynı:
 const COLORS = { red:"#ed1f1c", blue:"#1766f2", yellow:"#ffcc0a", green:"#33b824", white:"#f2f2f5", gray:"#9aa0a8" };
 const TEXTURES = {
@@ -236,7 +238,6 @@ function buildUI(){
   buildTablesUI();
 }
 
-const PFX_RE = /^(brick_|plate_|tile_|wall_|deco_|roof_|window_|door_|floor_|stair_|arch_|slope_|ramp_|round_2x2_|pillar_1x1_|technic_|gate_|corner_|glass_)/;
 function renderPalette(filter){
   const pc = document.getElementById('pieces'); pc.innerHTML='';
   const q = (filter||'').trim().toLowerCase();
@@ -274,19 +275,26 @@ function buildTablesUI(){
 }
 
 function preloadAll(){
-  let done=0;
+  let ok=0, fail=0; const failed=[];
+  const settle=()=>{
+    if(ok+fail < PIECES.length) return;        // hepsi (başarılı+başarısız) tamamlanınca
+    // brick_1x1 yüksekliği 0.64 olacak şekilde global ölçek
+    const h = proto['brick_1x1'] ? proto['brick_1x1'].sizeUnits.y : 0.64;
+    MODEL_SCALE = 0.64 / (h || 0.64);
+    for(const k in proto){ const u=proto[k].sizeUnits; proto[k].sizeUnits={x:u.x*MODEL_SCALE,y:u.y*MODEL_SCALE,z:u.z*MODEL_SCALE}; }
+    if(fail===0){
+      status.textContent='Hazır — parça seç, masaya tıkla. ('+ok+' parça, ölçek×'+MODEL_SCALE.toFixed(2)+')';
+    } else {
+      status.textContent='Hazır ('+ok+'/'+PIECES.length+' parça; '+fail+' yüklenemedi: '+failed.slice(0,4).join(', ')+(fail>4?'…':'')+')';
+      console.warn('Yüklenemeyen modeller:', failed);
+    }
+  };
   PIECES.forEach(t=>{
     loader.load('models/'+t+'.glb', g=>{
       const obj=g.scene; const box=new THREE.Box3().setFromObject(obj); const s=new THREE.Vector3(); box.getSize(s);
       proto[t]={ obj, sizeUnits:{x:s.x,y:s.y,z:s.z} };
-      if(++done===PIECES.length){
-        // brick_1x1 yüksekliği 0.64 olacak şekilde global ölçek
-        const h = proto['brick_1x1'] ? proto['brick_1x1'].sizeUnits.y : 0.64;
-        MODEL_SCALE = 0.64 / (h || 0.64);
-        for(const k in proto){ const u=proto[k].sizeUnits; proto[k].sizeUnits={x:u.x*MODEL_SCALE,y:u.y*MODEL_SCALE,z:u.z*MODEL_SCALE}; }
-        status.textContent='Hazır — parça seç, masaya tıkla. (ölçek×'+MODEL_SCALE.toFixed(2)+')';
-      }
-    }, undefined, err=>{ status.textContent='HATA: models/'+t+'.glb yüklenemedi (yerel sunucu gerekli).'; console.error(err); });
+      ok++; status.textContent='Yükleniyor… '+(ok+fail)+'/'+PIECES.length; settle();
+    }, undefined, err=>{ fail++; failed.push(t); console.error('GLB yüklenemedi:', t, err); settle(); });
   });
 }
 
