@@ -47,6 +47,15 @@
     <button data-mode="delete">Sil</button>
   </div>
 
+  <h2>Izgara (snap)</h2>
+  <div class="row seg">
+    <select id="gridSel" onchange="setGrid(this.value)">
+      <option value="0.5">0.5 (normal stud)</option>
+      <option value="0.25">0.25 (half / mikro)</option>
+      <option value="0.125">0.125 (quarter / mikro)</option>
+    </select>
+  </div>
+
   <h2>Kat (yükseklik): <span id="layerLbl">0 (y=0.0)</span></h2>
   <div class="row seg">
     <button onclick="setLayer(-1)">▼ Alt kat</button>
@@ -100,11 +109,22 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 const CELL = 0.5;           // stud aralığı / hücre
 // Y=0 = masa üst yüzeyi; parçalar +Y'de istiflenir (0.5 katları). Masa aşağı/bacaklar.
 
+// ---- TASARIM SINIRLARI — Unity LevelBounds ile AYNI değerler (değiştirirsen ikisini de güncelle) ----
+// Kutu içinde kalan bölümler kameraya sığar ve top arka sıralara ulaşır (scale GEREKMEZ).
+const BOUNDS = {
+  tableMinCells:2, tableMaxW:11, tableMaxD:11,
+  pieceMinX:-2.7, pieceMaxX:2.7, pieceMinZ:-2.5, pieceMaxZ:3.0, pieceMinY:0, pieceMaxY:4.7,
+  tableMinX:-2.7, tableMaxX:2.7, tableMinZ:-2.5, tableMaxZ:3.0
+};
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+function pieceInBounds(x,y,z){ return x>=BOUNDS.pieceMinX&&x<=BOUNDS.pieceMaxX&&z>=BOUNDS.pieceMinZ&&z<=BOUNDS.pieceMaxZ&&y>=BOUNDS.pieceMinY&&y<=BOUNDS.pieceMaxY; }
+
 // Tüm Brik seti — kategorili (Ultimate Modular Toy Brick, 3 sheet). Unity FBX adlarıyla birebir.
 const PIECE_GROUPS = [
   {label:"Tuğla (Brick)", items:["brick_1x1","brick_1x2","brick_1x3","brick_1x4","brick_1x6","brick_1x8","brick_1x10","brick_1x12","brick_1x14","brick_1x16","brick_2x2","brick_2x3","brick_2x4","brick_2x6","brick_2x8","brick_2x10","brick_2x12","brick_2x14","brick_2x16","brick_3x3","brick_3x4","brick_3x6","brick_3x8","brick_3x12","brick_4x4","brick_4x6","brick_4x8","brick_4x12","brick_6x6","brick_8x8","brick_8x10","brick_10x10","brick_12x12","brick_16x16","brick_lshape"]},
   {label:"Plaka (Plate, h0.25)", items:["plate_1x1","plate_1x2","plate_1x3","plate_1x4","plate_1x6","plate_1x8","plate_1x10","plate_1x12","plate_1x16","plate_2x2","plate_2x3","plate_2x4","plate_2x6","plate_2x8","plate_2x10","plate_2x12","plate_2x16","plate_4x4","plate_4x6","plate_4x8","plate_10x10","plate_12x12","plate_16x16"]},
   {label:"Karo (Tile, düz, h0.125)", items:["tile_1x1","tile_1x2","tile_1x3","tile_1x4","tile_1x6","tile_1x8","tile_1x10","tile_1x12","tile_1x16","tile_2x2","tile_2x3","tile_2x4","tile_2x6","tile_2x8","tile_2x10","tile_2x12","tile_2x16","tile_4x4","tile_4x6","tile_4x8","tile_10x10","tile_12x12","tile_16x16"]},
+  {label:"Mikro (half 0.25b / quarter 0.125b)", items:["half_1x1","half_1x2","half_1x3","half_1x4","half_2x2","half_2x4","half_plate_1x1","half_plate_2x2","half_plate_2x4","half_tile_1x1","half_tile_2x2","quarter_1x1","quarter_1x2","quarter_1x3","quarter_1x4","quarter_2x2","quarter_2x4","quarter_plate_1x1","quarter_plate_2x2","quarter_plate_2x4","quarter_tile_1x1","quarter_tile_2x2"]},
   {label:"Duvar / Panel", items:["wall_1x2","wall_1x4","wall_2x2","wall_2x4","wall_2x6","wall_2x8","wall_corner","panel_facade"]},
   {label:"Sütun / Kolon", items:["tall_1x1","tall_1x2","pillar_small","pillar_large","pillar_1x1_h1","pillar_1x1_h5","pillar_1x1_h6","pillar_1x1_h8","pillar_1x1_h10","pillar_1x1_h12","pillar_1x1_h16","pillar_1x1_h20","round_2x2_h1","round_2x2_h3","round_2x2_h4","round_2x2_h6","round_2x2_h8","round_2x2_h12","round_2x2_h16","round_2x2_h20"]},
   {label:"Technic (delikli)", items:["technic_1x4","technic_1x6","technic_1x8","technic_1x10","technic_1x12","technic_1x16"]},
@@ -148,11 +168,12 @@ const proto = {}; // type -> {obj, sizeUnits:{x,y,z}}
 let MODEL_SCALE = 1;        // brick_1x1 yüksekliği 0.64 olacak şekilde otomatik ayarlanır
 
 let placed = [];   // {obj, type, x,y,z, rotY, color}
-let tables = [ {x:0, z:0, cellsW:12, cellsD:4} ];
+let tables = [ {x:0, z:0, cellsW:8, cellsD:6} ];
 let activeTable = 0;
 let tableGroup, legGroup;
 
 let mode = "place", selType = "brick_2x2", selColor = "red", rotY = 0, layer = 0;
+let gridStep = CELL;   // yerleştirme ızgarası: 0.5 (normal) / 0.25 (half) / 0.125 (quarter)
 const keys = {};
 const status = document.getElementById('status');
 
@@ -266,8 +287,8 @@ function buildTablesUI(){
     d.innerHTML = `<div class="row"><b>Masa ${i+1}</b> ${i===activeTable?'<span style="color:#5aa6ff">●aktif</span>':''}
       <button style="margin-left:auto" onclick="selTable(${i})">Seç</button>
       <button onclick="delTable(${i})" ${tables.length<=1?'disabled':''}>✕</button></div>
-      <div class="row" style="margin-top:4px">En:<input type="number" min="2" max="40" value="${t.cellsW}" onchange="setTbl(${i},'cellsW',this.value)">
-        Boy:<input type="number" min="2" max="20" value="${t.cellsD}" onchange="setTbl(${i},'cellsD',this.value)"></div>
+      <div class="row" style="margin-top:4px">En:<input type="number" min="2" max="11" value="${t.cellsW}" onchange="setTbl(${i},'cellsW',this.value)">
+        Boy:<input type="number" min="2" max="11" value="${t.cellsD}" onchange="setTbl(${i},'cellsD',this.value)"></div>
       <div class="row" style="margin-top:4px">X:<input type="number" step="0.5" value="${t.x}" onchange="setTbl(${i},'x',this.value)">
         Z:<input type="number" step="0.5" value="${t.z}" onchange="setTbl(${i},'z',this.value)"></div>`;
     host.appendChild(d);
@@ -306,11 +327,13 @@ function footprint(type, r){
 }
 // Snap AKTİF MASANIN stud grid'ine göre (parite/konumdan bağımsız tam oturur)
 function snapToTable(v, center, cells, fc){
+  // İnce ızgara (mikro): masa merkezine göre serbest gridStep snap (stud-pariteyi atla).
+  if(gridStep < CELL - 0.001) return center + Math.round((v - center)/gridStep)*gridStep;
   const c = (v - center)/CELL + (cells-1)/2;   // tıklamanın hücre koordinatı (float)
   const s = Math.round(c - (fc-1)/2);          // tam başlangıç hücresi
   return center + (s + (fc-1)/2 - (cells-1)/2)*CELL;
 }
-function layerY(){ return layer*CELL; }
+function layerY(){ return layer*gridStep; }
 
 function makePiece(type, color){
   const p = proto[type]; if(!p) return null;
@@ -367,6 +390,7 @@ function onDown(ev){
   if(ev.button!==0) return;
   if(mode==='place'){
     const pt=screenToLayer(ev); if(!pt) return; const s=snapPoint(pt);
+    if(!pieceInBounds(s.x, s.y, s.z)){ status.textContent='Parça kamera alanı dışında! (sınır: x±2.7, z[-2.5,3.0], y≤4.7)'; return; }
     place(selType, s.x, s.y, s.z, rotY, selColor);
   } else if(mode==='delete'){
     const p=pickPiece(ev); if(p){ scene.remove(p.obj); placed=placed.filter(x=>x!==p); refresh(); }
@@ -425,11 +449,18 @@ function rebuildTables(){
 // ---- UI fonksiyonları (global) ----
 window.setRot=(r)=>{ rotY=r; document.getElementById('rotLbl').textContent=r+'°'; };
 window.setLayer=(d,abs)=>{ layer= abs? 0 : Math.max(0, layer+d);
-  document.getElementById('layerLbl').textContent=layer+' (y='+layerY().toFixed(1)+')'; rebuildTables(); };
+  document.getElementById('layerLbl').textContent=layer+' (y='+layerY().toFixed(3)+')'; rebuildTables(); };
+window.setGrid=(v)=>{ gridStep=parseFloat(v)||CELL; layer=0;
+  document.getElementById('layerLbl').textContent=layer+' (y='+layerY().toFixed(3)+')'; rebuildTables(); };
 window.selTable=(i)=>{ activeTable=i; buildTablesUI(); rebuildTables(); };
 window.delTable=(i)=>{ if(tables.length<=1)return; tables.splice(i,1); if(activeTable>=tables.length)activeTable=tables.length-1; buildTablesUI(); rebuildTables(); };
 window.addTable=()=>{ const last=tables[tables.length-1]; tables.push({x:+(last.x+ (last.cellsW*CELL)+1).toFixed(2), z:last.z, cellsW:8, cellsD:4}); activeTable=tables.length-1; buildTablesUI(); rebuildTables(); };
-window.setTbl=(i,k,v)=>{ v=parseFloat(v)||0; if(k==='cellsW'||k==='cellsD') v=Math.max(2,Math.round(v)); tables[i][k]=v; rebuildTables(); buildTablesUI(); };
+window.setTbl=(i,k,v)=>{ v=parseFloat(v)||0;
+  if(k==='cellsW') v=clamp(Math.round(v), BOUNDS.tableMinCells, BOUNDS.tableMaxW);
+  else if(k==='cellsD') v=clamp(Math.round(v), BOUNDS.tableMinCells, BOUNDS.tableMaxD);
+  else if(k==='x') v=clamp(v, BOUNDS.tableMinX, BOUNDS.tableMaxX);
+  else if(k==='z') v=clamp(v, BOUNDS.tableMinZ, BOUNDS.tableMaxZ);
+  tables[i][k]=v; rebuildTables(); buildTablesUI(); };
 window.clearPieces=()=>{ if(!confirm('Tüm parçalar silinsin mi? (masalar kalır)'))return; placed.forEach(p=>scene.remove(p.obj)); placed=[]; refresh(); };
 window.loadFile=()=>document.getElementById('fileIn').click();
 
@@ -451,8 +482,11 @@ function fly(){
 }
 
 function exportJSON(){
+  const oob = placed.filter(p=>!pieceInBounds(p.x,p.y,p.z));
+  if(oob.length && !confirm(oob.length+' parça kamera alanı dışında — bölüm ekranı taşabilir. Yine de indirilsin mi?')) return;
   const data = {
     shotCount: parseInt(document.getElementById('shots').value)||6,
+    pieceMul: 1,
     tables: tables.map(t=>({x:+t.x, z:+t.z, cellsW:t.cellsW, cellsD:t.cellsD})),
     pieces: placed.map(p=>({ type:p.type, x:+p.x, y:+p.y, z:+p.z, rotY:p.rotY, color:p.color }))
   };
