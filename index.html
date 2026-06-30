@@ -113,6 +113,8 @@ const CELL = 0.5;           // stud aralığı / hücre (standart parça grid'i)
 
 // ---- TASARIM SINIRLARI — Unity LevelBounds ile AYNI değerler (değiştirirsen ikisini de güncelle) ----
 // Kutu içinde kalan bölümler kameraya sığar ve top arka sıralara ulaşır (scale GEREKMEZ).
+// YENİDEN ÖLÇÜLDÜ 2026-06-30 (cart shooter + mermer masa + güncel açı; Main Cam FOV44 pos(0,7.2,-13.4),
+// Origin(0,2.52,2.59)): ön sıra ekran tavanı |x|≈2.85, z0'da 3.35, yükseklik ~5.6 → kutu içeride, DEĞİŞMEDİ.
 const BOUNDS = {
   tableMinCells:2, tableMaxW:11, tableMaxD:11,
   pieceMinX:-2.7, pieceMaxX:2.7, pieceMinZ:-2.5, pieceMaxZ:3.0, pieceMinY:0, pieceMaxY:4.7,
