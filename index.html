@@ -106,8 +106,10 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 // ---- Unity (BrikLevelBuilder) ile AYNI ----
-const CELL = 0.5;           // stud aralığı / hücre
-// Y=0 = masa üst yüzeyi; parçalar +Y'de istiflenir (0.5 katları). Masa aşağı/bacaklar.
+const CELL = 0.5;           // stud aralığı / hücre (standart parça grid'i)
+// Y=0 = masa üst yüzeyi; parçalar +Y'de istiflenir. Standart parça = 0.5 grid; mikro parçalar
+// için 'Izgara (snap)' ile 0.25 (half) veya 0.125 (quarter) ince grid seçilir. Kamera/masa
+// kutusu DEĞİŞMEZ — mikro yalnızca aynı kutu içinde daha ince yerleşim sağlar.
 
 // ---- TASARIM SINIRLARI — Unity LevelBounds ile AYNI değerler (değiştirirsen ikisini de güncelle) ----
 // Kutu içinde kalan bölümler kameraya sığar ve top arka sıralara ulaşır (scale GEREKMEZ).
